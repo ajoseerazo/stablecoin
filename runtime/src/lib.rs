@@ -41,6 +41,8 @@ use pallet_transaction_payment::CurrencyAdapter;
 
 /// Import the template pallet.
 pub use pallet_template;
+
+/// Importing Copcoin template
 pub use pallet_copcoin;
 
 /// An index to a block.
