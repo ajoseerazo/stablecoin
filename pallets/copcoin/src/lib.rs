@@ -3,8 +3,7 @@
 /// Edit this file to define custom logic or remove it if it is not needed.
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
 /// https://substrate.dev/docs/en/knowledgebase/runtime/frame
-
-use frame_support::{decl_module, decl_storage, decl_event, decl_error, dispatch, traits::Get};
+use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch::{DispatchResult, DispatchError}, traits::Get};
 use frame_system::ensure_signed;
 
 #[cfg(test)]
@@ -22,31 +21,36 @@ pub trait Config: frame_system::Config {
 // The pallet's runtime storage items.
 // https://substrate.dev/docs/en/knowledgebase/runtime/storage
 decl_storage! {
-	// A unique name is used to ensure that the pallet's storage items are isolated.
-	// This name may be updated, but each pallet in the runtime must use a unique name.
-	// ---------------------------------vvvvvvvvvvvvvv
 	trait Store for Module<T: Config> as Copcoin {
-		// Learn more about declaring storage items:
-		// https://substrate.dev/docs/en/knowledgebase/runtime/storage#declaring-storage-items
+		Owner get(fn owner): T::AccountId;
 		TotalSupply get(fn total_supply): u64;
+		Balances get(fn balance_of): map hasher(blake2_128_concat) T::AccountId => u64; // u256
+		Minters get(fn is_minter): map hasher(twox_64_concat) T::AccountId => bool;
 	}
 }
 
 // Pallets use events to inform users when important changes are made.
 // https://substrate.dev/docs/en/knowledgebase/runtime/events
 decl_event!(
-	pub enum Event<T> where AccountId = <T as frame_system::Config>::AccountId {
+	pub enum Event<T>
+	where
+		AccountId = <T as frame_system::Config>::AccountId,
+	{
 		SupplyChanged(u64, AccountId),
+		Mint(AccountId, AccountId, u64),
+		Burn(AccountId, u64),
+		MinterAdded(AccountId),
+		MinterRemoved(AccountId),
+		OwnerSet(AccountId),
+		NewOwner(AccountId),
 	}
 );
 
 // Errors inform users that something went wrong.
 decl_error! {
 	pub enum Error for Module<T: Config> {
-		/// Error names should be descriptive.
-		NoneValue,
-		/// Errors should have helpful documentation associated with them.
-		StorageOverflow,
+		// Tried to call a function that is limited to the owner
+		NotOwner
 	}
 }
 
@@ -61,22 +65,47 @@ decl_module! {
 		// Events must be initialized if they are used by the pallet.
 		fn deposit_event() = default;
 
-		/// An example dispatchable that takes a singles value as a parameter, writes the value to
-		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
 		#[weight = 10_000 + T::DbWeight::get().writes(1)]
-		pub fn set_supply(origin, new_supply: u64) -> dispatch::DispatchResult {
-			// Check that the extrinsic was signed and get the signer.
-			// This function will return an error if the extrinsic is not signed.
-			// https://substrate.dev/docs/en/knowledgebase/runtime/origin
-			let who = ensure_signed(origin)?;
+		pub fn set_owner(origin, new_owner: T::AccountId) -> DispatchResult {
+			let _who = ensure_signed(origin)?;
 
-			// Update storage.
-			TotalSupply::put(new_supply);
+			<Owner<T>>::put(&new_owner);
+
+			Self::deposit_event(RawEvent::NewOwner(new_owner));
+			Ok(())
+		}
+
+		#[weight = 10_000 + T::DbWeight::get().writes(1)]
+		pub fn add_minter(origin, new_minter: T::AccountId) -> DispatchResult {
+			let who = ensure_signed(origin)?;
+			let _owner = Self::ensure_owner(who)?;
+
+			<Minters<T>>::insert(&new_minter, true);
 
 			// Emit an event.
-			Self::deposit_event(RawEvent::SupplyChanged(new_supply, who));
+			Self::deposit_event(RawEvent::MinterAdded(new_minter));
 			// Return a successful DispatchResult
 			Ok(())
 		}
+
+		#[weight = 10_000 + T::DbWeight::get().writes(1)]
+		pub fn remove_minter(origin, minter: T::AccountId) -> DispatchResult {
+			let who = ensure_signed(origin)?;
+			let _owner = Self::ensure_owner(who)?;
+
+			<Minters<T>>::remove(&minter);
+
+			Self::deposit_event(RawEvent::MinterRemoved(minter));
+			Ok(())
+		}
+	}
+}
+
+impl<T: Config> Module<T> {
+	fn ensure_owner(acc: T::AccountId) -> Result<T::AccountId, DispatchError> {
+		if acc != Self::owner() {
+			return Err(DispatchError::from(Error::<T>::NotOwner));
+		}
+		Ok(acc)
 	}
 }

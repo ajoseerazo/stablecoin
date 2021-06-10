@@ -1,23 +1,41 @@
-use crate::{Error, mock::*};
-use frame_support::{assert_ok, assert_noop};
+use super::*;
+
+use crate::{mock::*, Error};
+use frame_support::{assert_noop, assert_ok};
 
 #[test]
-fn can_set_supply() {
+fn owner_can_add_minter() {
 	new_test_ext().execute_with(|| {
-		// Dispatch a signed extrinsic.
-		assert_ok!(Copcoin::set_supply(Origin::signed(1), 42));
+		let owner = 1;
+		Owner::<Test>::put(owner);
+		let minter = 2;
+		assert_ok!(Copcoin::add_minter(Origin::signed(owner), minter));
 		// Read pallet storage and assert an expected result.
-		assert_eq!(Copcoin::total_supply(), 42);
+		assert!(Copcoin::is_minter(minter));
 	});
 }
 
-/*#[test]
-fn correct_error_for_none_value() {
+#[test]
+fn can_remove_minter() {
 	new_test_ext().execute_with(|| {
-		// Ensure the expected error is thrown when no value is present.
+		let owner = 1;
+		Owner::<Test>::put(owner);
+		let minter = 2;
+		Minters::<Test>::insert(minter, true);
+
+		assert_ok!(Copcoin::remove_minter(Origin::signed(owner), minter));
+		assert!(!Copcoin::is_minter(minter));
+	});
+}
+
+#[test]
+fn only_owner_can_add_minter() {
+	new_test_ext().execute_with(|| {
+		let non_owner = 1;
+		let minter = 2;
 		assert_noop!(
-			TemplateModule::cause_error(Origin::signed(1)),
-			Error::<Test>::NoneValue
+			Copcoin::add_minter(Origin::signed(non_owner), minter),
+			Error::<Test>::NotOwner
 		);
 	});
-}*/
+}
