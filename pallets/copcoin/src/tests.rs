@@ -39,3 +39,17 @@ fn only_owner_can_add_minter() {
 		);
 	});
 }
+
+#[test]
+fn minter_can_mint() {
+	new_test_ext().execute_with(|| {
+		let minter = 2;
+		Minters::<Test>::insert(minter, true);
+
+		let recipient = 3;
+		let amount = 42;
+		assert_ok!(Copcoin::mint(Origin::signed(minter), recipient, amount));
+
+		assert_eq!(Copcoin::balance_of(recipient), amount);
+	})
+}

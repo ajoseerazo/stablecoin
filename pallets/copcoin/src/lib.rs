@@ -3,7 +3,11 @@
 /// Edit this file to define custom logic or remove it if it is not needed.
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
 /// https://substrate.dev/docs/en/knowledgebase/runtime/frame
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch::{DispatchResult, DispatchError}, traits::Get};
+use frame_support::{
+	decl_error, decl_event, decl_module, decl_storage,
+	dispatch::{DispatchError, DispatchResult},
+	traits::Get,
+};
 use frame_system::ensure_signed;
 
 #[cfg(test)]
@@ -50,7 +54,10 @@ decl_event!(
 decl_error! {
 	pub enum Error for Module<T: Config> {
 		// Tried to call a function that is limited to the owner
-		NotOwner
+		NotOwner,
+		// A non minter account tries to mint
+		NotMinter,
+		SupplyOverflow
 	}
 }
 
@@ -75,6 +82,7 @@ decl_module! {
 			Ok(())
 		}
 
+		// Add an account as a minter
 		#[weight = 10_000 + T::DbWeight::get().writes(1)]
 		pub fn add_minter(origin, new_minter: T::AccountId) -> DispatchResult {
 			let who = ensure_signed(origin)?;
@@ -88,6 +96,7 @@ decl_module! {
 			Ok(())
 		}
 
+		// remove an account from the set of minters
 		#[weight = 10_000 + T::DbWeight::get().writes(1)]
 		pub fn remove_minter(origin, minter: T::AccountId) -> DispatchResult {
 			let who = ensure_signed(origin)?;
@@ -98,6 +107,25 @@ decl_module! {
 			Self::deposit_event(RawEvent::MinterRemoved(minter));
 			Ok(())
 		}
+
+		// Create `amount` of coins out of thn air and deposit then into `to_account`
+		#[weight = 10_000 + T::DbWeight::get().writes(1)]
+		pub fn mint(origin, to_account: T::AccountId, amount: u64) -> DispatchResult {
+			let who = ensure_signed(origin)?;
+			let minter = Self::ensure_minter(who)?;
+
+			let supply = Self::total_supply();
+
+			let new_supply = supply.checked_add(amount).ok_or(Error::<T>::SupplyOverflow)?;
+			// ^ verify
+			// v update
+			<TotalSupply>::put(new_supply);
+			<Balances<T>>::mutate(&to_account, |balance| {
+				*balance = balance.saturating_add(amount);
+			});
+			Self::deposit_event(RawEvent::Mint(minter, to_account, amount));
+			Ok(())
+		}
 	}
 }
 
@@ -105,6 +133,13 @@ impl<T: Config> Module<T> {
 	fn ensure_owner(acc: T::AccountId) -> Result<T::AccountId, DispatchError> {
 		if acc != Self::owner() {
 			return Err(DispatchError::from(Error::<T>::NotOwner));
+		}
+		Ok(acc)
+	}
+
+	fn ensure_minter(acc: T::AccountId) -> Result<T::AccountId, DispatchError> {
+		if !Self::is_minter(&acc) {
+			return Err(DispatchError::from(Error::<T>::NotMinter));
 		}
 		Ok(acc)
 	}
